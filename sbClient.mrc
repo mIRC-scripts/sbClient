@@ -92,9 +92,13 @@
 ; added more key shortcuts for @sbClient.* windows. r = request file, ctrl-r = request file & delete from window, ctrl-z = search within window
 ; added Internal, AutoGet, vPowerGet default request methods to options.
 ; added an internal autoget method, allowing you to queue up & d/l files (this is a minimal autoget & doesnt have all the features of AutoGet etc..)
+; 2.25
+; fixed error messages sometimes freezing when called within events.
+; 2.25.1
+; added the ability to request files by the hash value if supplied (only with internal request queue)
 ;
 
-alias sbClient.version return 2.24
+alias sbClient.version return 2.25.1
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($scriptdirsbClient.dll,$1,$2-)
@@ -319,7 +323,7 @@ on *:dialog:sbClient_search:sclick:1: {
   did -r sbClient_search 5
   dialog -t sbClient_search Now searching for $+(",%sstring,".)
 }
-alias sbClient.error noop $input($1-,ohd,sbClient error)
+alias sbClient.error timer 1 0 noop $input($1-,ohd,sbClient error)
 alias sbClient.FixString return $replace($1-,$chr(34),$null,$chr(39), $chr(32),$chr(42),$chr(32),$chr(63),$chr(32),$chr(32) $+ $chr(32),$chr(32))
 alias sbClient.DoLocalSearch {
   set %sbClient.string $1-
@@ -605,8 +609,19 @@ alias -l sbClient.LoadOldResults {
   sbClient.LS.Loadresults @sbClient.OldResults %file
   titlebar @sbClient.OldResults -|- File $qt($nopath(%file)) loaded. -|- $line(@sbClient.OldResults,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
 }
+alias sbclient.GetFileHash {
+  var %r = /::HASH::\s([a-f\d]+)/i
+  if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
+  var %r = /^\S+?\s(%[a-f\d]+%)\s/i
+  if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
+  ; didn't get hash :(
+  return
+}
+;!trigger filename
+;!trigger %hash% filename
+;!trigger filename ::HASH:: hash
 alias sbclient.GetFileName {
-  var %r = /^(.*\.[a-z][a-z\d]{1,4})(?:\s|$)/
+  var %r = /^\S+?\s(?:\x25[a-f\d]+\x25\s)?(.*\.[a-z][a-z\d]{1,4})(?:\s|$)/i
   tokenize 32 $replace($1-,$chr(160),$chr(32))
   if ($regex($1-,%r)) return $regml(1)
   ; didn't get extension :(
@@ -652,7 +667,7 @@ on *:load: {
     sbClient.Display sbClient.dll not found in script folder. Loading stopped.
     unload -rs $script
   }
-  else sbClient.Display sbClient.dll version $sbClientdll(GetDllVersion, nothing) by Iczelion found.
+  else sbClient.Display sbClient.dll version $sbClientdll(GetDllVersion, nothing) by Ook found.
   sbClient.Display Checking mUnzip.dll
   if ($version < 7.55) {
     if (!$isfile($scriptdirmUnzip.dll)) {
@@ -1047,7 +1062,11 @@ alias -l sbClient.requestfile {
   window -b @sbClientQueue
 
   set %sbClient.RequestedTrigger $gettok(%l,1,32)
-  set %sbClient.RequestedFile $gettok(%l,2-,32)
+  set %sbClient.RequestedFile $sbClient.GetFileName(%l)
+  set %sbClient.RequestedHash $sbClient.GetFileHash(%l)
+
+  if (%sbClient.RequestedHash) var %l = %sbClient.RequestedTrigger %sbClient.RequestedHash
+  else var %l = %sbClient.RequestedTrigger %sbClient.RequestedFile
 
   if (($isalias(os.window.buffer)) && ($group(#SDFind) == on)) {
     if ($.os.window.buffer) {
@@ -1074,7 +1093,7 @@ alias sbClient.CloseQueue {
 ; $1 = window, $2 = request line number
 alias sbClient.queuerequest {
   if (!$sbClient.window.queue) return
-  var %l = $sbClient.GetFileName($line($1,$2))
+  var %l = $line($1,$2)
   if ($fline(@sbClientQueue,%l,0,1) > 1) {
     sbClient.Display Request already in queue.
     return
