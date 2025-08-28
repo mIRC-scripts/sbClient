@@ -69,9 +69,15 @@
 ; 2.23.23
 ; Removed workaround for v1.8.3 dll bugs, using new v2+ dll instead.
 ; Updated sbClient.dll to v2.0.2
+; 2.23.24
+; fixed clipboard multiline-copy missing a crlf
+; 2.23.25
+; Updated sbClient.dll to v2.0.4.18
+; 2.23.26
+; Updated sbClient.dll to v2.0.4.19
 ;
 
-alias sbClient.version return 2.23.23
+alias sbClient.version return 2.23.26
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($qt($scriptdirsbClient.dll),$1,$2-)
@@ -176,9 +182,9 @@ ctcp *:TRIGGER: {
     echo -s 1,9<<sbClient>> Received SearchBot trigger from $3 (network $2 $+ ): $4
   }
 }
-;ctcp *:VERSION: {
-;  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
-;}
+ctcp *:VERSION: {
+  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
+}
 dialog sbClient_search {
   title "sbClient search dialog"
   size -1 -1 219 103
@@ -420,7 +426,8 @@ menu @sbClient.* {
       var %l = $v1
       if ($sbClient.Online(%l)) cline 10 $active $sline($active,%cnter).ln
       else cline 6 $active $sline($active,%cnter).ln
-      if (%t > 1) clipboard -an $iif($mouse.key & 2,%l,$sbClient.GetFileName(%l))
+      if (%t == 2) clipboard -an $+($crlf,$iif($mouse.key & 2,%l,$sbClient.GetFileName(%l)))
+      elseif (%t > 1) clipboard -an $iif($mouse.key & 2,%l,$sbClient.GetFileName(%l))
       else clipboard -n $iif($mouse.key & 2,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
@@ -845,7 +852,8 @@ on *:KEYDOWN:@sbClient.*:*: {
       var %l = $v1
       if ($sbClient.Online(%l)) cline 10 $active $sline($active,%cnter).ln
       else cline 6 $active $sline($active,%cnter).ln
-      if (%t > 1) clipboard -an $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
+      if (%t == 2) clipboard -an $+($crlf,$iif(!%ctrlc,%l,$sbClient.GetFileName(%l)))
+      elseif (%t > 1) clipboard -an $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
       else clipboard -n $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
