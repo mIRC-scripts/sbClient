@@ -66,9 +66,12 @@
 ; fixed clipboard multiline-copy missing a crlf
 ; 2.23.22
 ; Improved bugfix applied in 2.23.20
+; 2.23.23
+; Removed workaround for v1.8.3 dll bugs, using new v2+ dll instead.
+; Updated sbClient.dll to v2.0.2
 ;
 
-alias sbClient.version return 2.23.22
+alias sbClient.version return 2.23.23
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($qt($scriptdirsbClient.dll),$1,$2-)
@@ -173,9 +176,9 @@ ctcp *:TRIGGER: {
     echo -s 1,9<<sbClient>> Received SearchBot trigger from $3 (network $2 $+ ): $4
   }
 }
-ctcp *:VERSION: {
-  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
-}
+;ctcp *:VERSION: {
+;  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
+;}
 dialog sbClient_search {
   title "sbClient search dialog"
   size -1 -1 219 103
@@ -262,20 +265,6 @@ on *:dialog:sbClient_search:sclick:1: {
       sbClient.error There are no lists in the selected folder!
       if ($did(11).state) goto chansearch
       halt
-    }
-    ; fix for "this is" etc.. fails
-    ; if word found containing "is" is found then remove the actual word "is" from the search.
-    ;if ($regex(%sstring,/\b(?:\S+(is|to)(?:\S+)?|\1\S+)\b/i)) var %sstring = $remtok(%sstring,$regml(1),0,32)
-
-    var %c = 1, %t
-    while ($gettok(%sstring,%c,32) != $null) {
-      var %w = $replace($v1,\E,\\E), %r = /\b((?:\S+\Q $+ %w $+ \E(?:\S+)?|\Q $+ %w $+ \E\S+))\b/i
-      if (($len(%w) < 2) || (!$regex(%sstring,%r))) var %t = $addtok(%t,%w,32)
-      inc %c
-    }
-    if (%t != %sstring) {
-      if ($dialog(sbClient_search)) dialog -t sbClient_search $qt(%sstring) shortened to $qt(%t)
-      var %sstring = %t
     }
     sbClient.DoLocalSearch %sstring
   }
@@ -440,7 +429,9 @@ menu @sbClient.* {
   $iif(!$script(AutoGet.mrc), $style(2)) Send to AutoGet 7: {
     var %path = $nofile($script(AutoGet.mrc))
     .fopen MTlisttowaiting $+(",%path,AGwaiting.ini,")
+    if ($fopen(MTlisttowaiting).err) return
     .fseek -l MTlisttowaiting $lines($+(",%path,AGwaiting.ini,"))
+    if ($fopen(MTlisttowaiting).err) return
     var %i = 1, %j = 0
     while (%i <= $sline($active,0)) {
       var %temp = $MTlisttowaiting($sline($active,%i))
@@ -457,7 +448,7 @@ menu @sbClient.* {
   }
   $iif(!$script(vPowerGet.net.mrc), $style(2)) Send to vPowerGet.NET: {
     var %lines = $sline($active,0)
-    if (!%lines) halt
+    if (!%lines) return
     var %cnter = 1
     while (%cnter <= %lines) {
       if ($com(vPG.NET,AddFiles,1,bstr,$sline($active,%cnter)) == 0) echo -s vPG.NET: AddFiles failed
