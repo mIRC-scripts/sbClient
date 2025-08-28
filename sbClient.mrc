@@ -107,9 +107,16 @@
 ; added another hash type to sbclient.GetFileHash
 ; changed sbclient.GetFilename to return the part after the trigger if no file ext found.
 ; changed filercvd event to handle servers that send a file named differently to what they have listed.
+; 2.25.6
+; fixed bug in ctrl-c code which missed the trigger.
+; 2.26
+; added basic compatibility with WhereIs bot
+; added advanced options to dialog (atm this only allows setting the regex pattern)
+; 2.26.1
+; changes made to WhereIs bot accounted for.
 ;
 
-alias sbClient.version return 2.25.5
+alias sbClient.version return 2.26.1
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($scriptdirsbClient.dll,$1,$2-)
@@ -121,36 +128,44 @@ dialog sbClient_options {
   title sbClient v $+ $sbClient.version
   size -1 -1 240 202
   option map notheme
-  tab "General", 1, 1 3 236 173
-  tab "SearchBot", 6
-  button "Close", 11, 20 183 70 12, ok
-  button "Search dialog", 16, 148 183 70 12
-  box "Channels", 21, 2 22 230 140, tab 6
-  check "Store search result .txt files", 26, 5 164 200 8, tab 6
-  list 31, 6 40 174 45, tab 6 vsbar size
-  button "Add", 36, 183 40 45 45, tab 6
-  text "Current channels:", 41, 6 30 100 8, tab 6
-  text "SearchBot channels:", 46, 6 87 100 8, tab 6
-  list 51, 6 96 174 45, tab 6 vsbar size
-  button "Remove", 56, 183 96 45 45, tab 6
-  button "Request search triggers", 61, 6 146 182 13, tab 6 flat
-  check "No max results limit for local searches (not recommended)", 66, 10 24 200 8, tab 1
-  check "Check for a new sbClient version on mIRC start", 71, 10 35 200 8, tab 1
-  button "Check now", 76, 177 35 54 8, tab 1 flat multi
+  tab     "General",                        1, 1 3 236 173
+  tab     "SearchBot",                      6
+  tab     "Advanced",                       7
+  button  "Close",                          11, 20 183 70 12, ok
+  button  "Search dialog",                  16, 148 183 70 12
+  box     "Channels",                       21, 2 22 230 140, tab 6
+  check   "Store search result .txt files", 26, 5 164 200 8, tab 6
+  list                                      31, 6 40 174 45, tab 6 vsbar size
+  button  "Add",                            36, 183 40 45 45, tab 6
+  text    "Current channels:",              41, 6 30 100 8, tab 6
+  text    "SearchBot channels:",            46, 6 87 100 8, tab 6
+  list                                      51, 6 96 174 45, tab 6 vsbar size
+  button  "Remove",                         56, 183 96 45 45, tab 6
+  button  "Request search triggers",        61, 6 146 182 13, tab 6 flat
+  check   "No max results limit for local searches (not recommended)", 66, 10 24 200 8, tab 1
+  check   "Check for a new sbClient version on mIRC start", 71, 10 35 200 8, tab 1 disable
+  button  "Check now",                      76, 177 35 54 8, tab 1 flat multi disable
 
-  check "Enable Version response", 110, 10 55 100 11, tab 1
+  check   "Enable Version response",       110, 10 55 100 11, tab 1
 
-  box "Default Request Method", 99, 8 71 180 25, tab 1
-  radio "Internal",            100, 13 81 50 11, tab 1 group
-  radio "Autoget",             101, 64 81 50 11, tab 1
-  radio "vPowerGet.NET",       102, 114 81 70 11, tab 1
+  box     "Default Request Method",         99, 8 71 180 25, tab 1
+  radio   "Internal",                      100, 13 81 50 11, tab 1 group
+  radio   "Autoget",                       101, 64 81 50 11, tab 1
+  radio   "vPowerGet.NET",                 102, 114 81 70 11, tab 1
 
-  box "sbClient", 81, 8 100 182 40, tab 1
-  text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 110 120 40, tab 1 multi
-  link "www.dukelupus.com", 91, 68 150 80 8, tab 1
-  check "Group @find results", 96, 10 46 81 8, tab 1
+  box     "sbClient",                       81, 8 100 182 40, tab 1
+  text    "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 110 120 40, tab 1 multi
+  link    "www.dukelupus.com",              91, 68 150 80 8, tab 1
+  check   "Group @find results",            96, 10 46 81 8, tab 1
+
+  check   "Enable Advanced Options",       700, 10 24 100 12, tab 7
+  text    "Search Results Regex",          701, 10 36 100 12, tab 7 disable
+  edit    %sbClient.ResultsFileRegex,      702, 10 48 200 12, tab 7 autohs disable
+  text    "Search Terms Regex",            703, 10 60 100 12, tab 7 disable
+  edit    %sbClient.ResultsTermsRegex,     704, 10 72 200 12, tab 7 autohs disable
 }
 on *:dialog:sbClient_options:init:0: {
+  sbClient.CheckVars
   if (%sbClient.storetxt == 1) did -c sbClient_options 26
   if (%sbClient.groupfind == 1) did -c sbClient_options 96
   var %cnter = 1
@@ -169,6 +184,9 @@ on *:dialog:sbClient_options:init:0: {
   if (%sbClient.defreqmethod isnum 100-102) did -c sbClient_options $v1
   else did -c sbClient_options 100
   if (%sbClient.versionresponse) did -c $dname 110
+}
+on *:dialog:sbClient_options:sclick:700: {
+  did $iif($did(700).state,-e,-b) sbClient_options 701-704
 }
 on *:dialog:sbClient_options:sclick:36: {
   if (!$did(31).seltext) return
@@ -197,6 +215,12 @@ on *:dialog:sbClient_options:close:*: {
   if ($did(101).state) set %sbClient.defreqmethod 101
   elseif ($did(102).state) set %sbClient.defreqmethod 102
   else set %sbClient.defreqmethod 100
+  if ($did(700).state) {
+    ; only save if advanced options enabled.
+    set %sbClient.ResultsFileRegex $did(702).text
+    set %sbClient.ResultsTermsRegex $did(704).text
+  }
+  sbClient.CheckVars
 }
 on *:dialog:sbClient_options:sclick:61: {
   var %cnter = 1
@@ -380,7 +404,6 @@ alias sbClient.SearchDone {
 ;}
 ; $1 = @window, $2- = filename
 alias sbClient.LS.Loadresults {
-  ; Ook: remove tabs
   set %sbClient.window $1
   var %file = $qt($2-)
   if (!$isfile(%file)) return
@@ -683,11 +706,19 @@ on *:unload: {
   unset %sbClient.*
   sbClient.Display sbClient removed. Note that sbClient files were not deleted.
 }
+alias -l sbClient.CheckVars {
+  if (!$var(%sbClient.storetxt,0)) set %sbClient.storetxt 1
+  if (!$var(%sbClient.checkver,0)) set %sbClient.checkver 1
+  if (!$var(%sbClient.versionresponse,0)) set %sbClient.versionresponse 1
+  if (!$var(%sbClient.defreqmethod,0)) set %sbClient.defreqmethod 100
+  if (!$var(%sbClient.ResultsFileRegex,0)) set %sbClient.ResultsFileRegex /^Se(?:arch|ek)\w+?[_\s]results[_\s]for[_\s]/i
+  if (!$var(%sbClient.ResultsTermsRegex,0)) set %sbClient.ResultsTermsRegex /^(Se(?:arch|ek)\w+?)[_\s]results[_\s]for[_\s](.*)$/i
+}
 on *:load: {
   if ($script != $script(1)) .load -rs1 $qt($script)
   sbClient.Display Loading sbClient v $+ $sbClient.version by DukeLupus (Modified by Ook)
   sbClient.Display Check 12www.dukelupus.com1,9 for help and updates.
-  if ($version < 7.72) sbClient.Display mIRC v7.72+ is recommended.
+  if ($version < 7.55) sbClient.Display mIRC v7.55+ is recommended.
   sbClient.Display Checking sbClient.dll
   if (!$isfile($scriptdirsbClient.dll)) {
     sbClient.Display sbClient.dll not found in script folder. Loading stopped.
@@ -704,10 +735,7 @@ on *:load: {
   }
   else sbClient.Display mIRC $+(v,$version) found, mUnzip.dll not required.
   sbClient.Display Initializing variables...
-  set %sbClient.storetxt 1
-  set %sbClient.checkver 1
-  set %sbClient.versionresponse 1
-  set %sbClient.defreqmethod 100
+  sbClient.CheckVars
   sbClient.Display All done, sbClient successfully loaded
   .timer 1 0 dialog -am sbClient_options sbClient_options
 }
@@ -724,14 +752,15 @@ alias sbClient.DoSearch {
   scon $sbClient.GetNetworkID($1)
   msg $sbClient.GetChannel($1) $($+(%,sbClient.,$1,.trigger),2) $2-
 }
-on *:filercvd:Se*results*for*: {
+on *:filercvd:*results?for*: {
   var %resultdir = $+($mircdir,SearchBot results), %fn = $nopath($filename)
+  sbClient.CheckVars
   ; try to determine if its a valid results file & not something else.
-  if (!$regex(%fn,/^(Se(?:arch|ek)\w+?)[_\s]results[_\s]for[_\s]/i)) return
+  if (!$regex(%fn,%sbClient.ResultsFileRegex)) return
   if (!$isdir(%resultdir)) {
     if (!$sbClient.mkdir(%resultdir)) { sbClient.error Unable to make folder: %resultdir | halt }
   }
-  var %r = $regsubex(%fn,/(Se(?:arch|ek)\w+?)[_\s]results[_\s]for[_\s](.*)$/,$+(\1_results_for_,$chr(1),$replace(\2,_,$chr(32),.txt.zip,.txt)))
+  var %r = $regsubex(%fn,%sbClient.ResultsTermsRegex,$+(\1_results_for_,$chr(1),$replace(\2,_,$chr(32),.txt.zip,.txt,.zip,.txt)))
   if ($right(%fn,4) == .zip) {
     if ($version < 7.55) {
       if (OK !isin $dll($scriptdirmUnzip.dll,Unzip,-oM *.txt $qt($filename) $qt(%resultdir))) { sbClient.error Unzipping of the results failed! | halt }
@@ -740,7 +769,8 @@ on *:filercvd:Se*results*for*: {
       if (!$zip($filename,eo,%resultdir)) { sbClient.error Unzipping of the results failed! | halt }
     }
     if (!$sbClient.remove($filename)) { sbClient.error Unable to remove archive: $filename | halt }
-    var %rfile = $+(",%resultdir,\,$gettok(%r,1,1),$gettok(%r,2,1),")
+    ;var %rfile = $+(",%resultdir,\,$gettok(%r,1,1),$gettok(%r,2,1),")
+    var %rfile = $+(",$findfile(%resultdir,$+($gettok(%r,1,1),$replace($gettok(%r,2,1),_,?,$chr(32),?)),1),")
   }
   else {
     var %rfile = $+(",%resultdir,%fn,")
@@ -758,7 +788,7 @@ on *:filercvd:Se*results*for*: {
   set %sbClient.string $right($left($gettok(%r,2,1),-4),-1)
   titlebar %window -|- SearchBot results for $qt(%sbClient.string) -|- Current channel is %sbClient.SearchChannel -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   if (%sbClient.storetxt) {
-    var %filename = $+(",$mircdir,SearchBot results,\,$gettok(%r,2,1),")
+    var %filename = $+(",$mircdirSearchBot results\,$gettok(%r,2,1),")
     var %filename = $replace(%filename,.txt,$+(.,$asctime(yyyy-mm-dd-HH-mm-ss),.txt))
     if ($isfile(%filename)) var %filename = $replace(%filename,.txt,$+(.,$ticks,.txt))
     if (!$sbClient.rename(%rfile,%filename)) sbClient.error Unable to rename %rfile to %filename
@@ -832,6 +862,7 @@ on *:start: {
     if (!$isalias(comchar)) .enable #sbclient_nocomchar
   }
   ;
+  sbClient.CheckVars
   sbClient.Cleanup
   if ($script(1) != $script) .reload -rs1 $script
   if (%sbClient.checkver == 1) sbClient.update
@@ -1171,9 +1202,9 @@ on *:CHAR:@sbClient.*:*: {
       var %l = $v1
       if ($sbClient.Online(%l)) cline 10 $active $sline($active,%cnter).ln
       else cline 6 $active $sline($active,%cnter).ln
-      if (%t == 2) clipboard -an $+($crlf,$iif(!%ctrlc,%l,$sbClient.GetFileName(%l)))
-      elseif (%t > 1) clipboard -an $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
-      else clipboard -n $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
+      if (%t == 2) clipboard -an $+($crlf,$gettok(%l,1,32) $sbClient.GetFileName(%l))
+      elseif (%t > 1) clipboard -an $gettok(%l,1,32) $sbClient.GetFileName(%l)
+      else clipboard -n $gettok(%l,1,32) $sbClient.GetFileName(%l)
       inc %cnter
     }
     titlebar $active -|- $line($active,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($active,0) line(s) copied to clipboard -|-
