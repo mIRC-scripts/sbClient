@@ -64,9 +64,11 @@
 ; added a workaround for a search dll bug that causes searches like: "miss mary is scary" to fail when they shouldn't. This only affects local searches.
 ; 2.23.21
 ; fixed clipboard multiline-copy missing a crlf
+; 2.23.22
+; Improved bugfix applied in 2.23.20
 ;
 
-alias sbClient.version return 2.23.21
+alias sbClient.version return 2.23.22
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($qt($scriptdirsbClient.dll),$1,$2-)
@@ -171,9 +173,9 @@ ctcp *:TRIGGER: {
     echo -s 1,9<<sbClient>> Received SearchBot trigger from $3 (network $2 $+ ): $4
   }
 }
-;ctcp *:VERSION: {
-;  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
-;}
+ctcp *:VERSION: {
+  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
+}
 dialog sbClient_search {
   title "sbClient search dialog"
   size -1 -1 219 103
@@ -263,18 +265,18 @@ on *:dialog:sbClient_search:sclick:1: {
     }
     ; fix for "this is" etc.. fails
     ; if word found containing "is" is found then remove the actual word "is" from the search.
-    if ($regex(%sstring,/\b(?:\S+is(?:\S+)?|is\S+)\b/i)) var %sstring = $remtok(%sstring,is,0,32)
+    ;if ($regex(%sstring,/\b(?:\S+(is|to)(?:\S+)?|\1\S+)\b/i)) var %sstring = $remtok(%sstring,$regml(1),0,32)
 
-    ;var %c = 1, %t
-    ;while ($gettok(%sstring,%c,32) != $null) {
-    ;  var %w = $v1
-    ;  if ($count(%sstring,%w) == 1) var %t = $addtok(%t,%w,32)
-    ;  inc %c
-    ;}
-    ;if (%t != %sstring) {
-    ;  if ($dialog(sbClient_search)) dialog -t sbClient_search $qt(%sstring) shortened to $qt(%t)
-    ;  var %sstring = %t
-    ;}
+    var %c = 1, %t
+    while ($gettok(%sstring,%c,32) != $null) {
+      var %w = $replace($v1,\E,\\E), %r = /\b((?:\S+\Q $+ %w $+ \E(?:\S+)?|\Q $+ %w $+ \E\S+))\b/i
+      if (($len(%w) < 2) || (!$regex(%sstring,%r))) var %t = $addtok(%t,%w,32)
+      inc %c
+    }
+    if (%t != %sstring) {
+      if ($dialog(sbClient_search)) dialog -t sbClient_search $qt(%sstring) shortened to $qt(%t)
+      var %sstring = %t
+    }
     sbClient.DoLocalSearch %sstring
   }
   :chansearch
