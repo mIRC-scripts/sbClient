@@ -96,9 +96,20 @@
 ; fixed error messages sometimes freezing when called within events.
 ; 2.25.1
 ; added the ability to request files by the hash value if supplied (only with internal request queue)
+; 2.25.2
+; added support for another hash style (sigh)
+; 2.25.3
+; fixed queue title not updating
+; made sbClient.SendToInternal alias global to allow its use by other scripts.
+; 2.25.4
+; fixed sbClient.requestfile not parsing nick correctly.
+; 2.25.5
+; added another hash type to sbclient.GetFileHash
+; changed sbclient.GetFilename to return the part after the trigger if no file ext found.
+; changed filercvd event to handle servers that send a file named differently to what they have listed.
 ;
 
-alias sbClient.version return 2.25.1
+alias sbClient.version return 2.25.5
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($scriptdirsbClient.dll,$1,$2-)
@@ -465,7 +476,7 @@ alias -l sbClient.SendTovPowerGet {
   }
 }
 ; $1 = window
-alias -l sbClient.SendToInternal {
+alias sbClient.SendToInternal {
   if (!$window($1)) return
   if (!$sline($1,0)) return
 
@@ -480,7 +491,7 @@ alias -l sbClient.SendToInternal {
 
     inc %cnter
   }
-  titlebar $1 -|- $line($1,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($1,0) line(s) sent to queue -|-
+  if (@sbClient* iswm $1) titlebar $1 -|- $line($1,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($1,0) line(s) sent to queue -|-
 }
 ; $1 = window
 alias -l sbClient.SendToDefault {
@@ -609,23 +620,38 @@ alias -l sbClient.LoadOldResults {
   sbClient.LS.Loadresults @sbClient.OldResults %file
   titlebar @sbClient.OldResults -|- File $qt($nopath(%file)) loaded. -|- $line(@sbClient.OldResults,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
 }
+;!trigger filename
+;!trigger %hash% filename
+;!trigger hash | filename
+;!trigger hash - filename (no ext)
+;!trigger filename ::HASH:: hash
 alias sbclient.GetFileHash {
+  ;!trigger filename ::HASH:: hash
   var %r = /::HASH::\s([a-f\d]+)/i
   if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
-  var %r = /^\S+?\s(%[a-f\d]+%)\s/i
+  ;!trigger %hash% filename
+  var %r = /^\S+?\s(\x25[a-f\d]+\x25)\s/i
   if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
-  ; didn't get hash :(
+  ;!trigger hash22chars - filename (no ext)
+  var %r = /^\S+?\s([a-z\d+\/]{22})\s/i
+  if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
+  ;;!trigger hash | filename ( this type doesnt respond to hash alone )
+  ;var %r = /^\S+?\s([a-f\d]{12})\s\x7c\s/i
+  ;if ($regex($replace($1-,$chr(160),$chr(32)),%r)) return $regml(1)
+  ;!trigger filename
   return
 }
 ;!trigger filename
 ;!trigger %hash% filename
+;!trigger hash | filename
+;!trigger hash22chars - filename (no ext) (use hash instead of filename)
 ;!trigger filename ::HASH:: hash
 alias sbclient.GetFileName {
-  var %r = /^\S+?\s(?:\x25[a-f\d]+\x25\s)?(.*\.[a-z][a-z\d]{1,4})(?:\s|$)/i
+  var %r = /^\S+?\s(?:\x25[a-f\d]+\x25\s|[a-f\d]{12}\s\x7c\s)?(.*\.[a-z][a-z\d]{1,4})(?:\s|$)/i
   tokenize 32 $replace($1-,$chr(160),$chr(32))
   if ($regex($1-,%r)) return $regml(1)
   ; didn't get extension :(
-  return $1-
+  return $2-
 }
 menu menubar,channel {
   sbClient
@@ -728,7 +754,9 @@ on *:filercvd:Se*results*for*: {
   sbClient.ColorNicks %window
   ; this line sorts window contents by nick
   ;window -bs %window
-  titlebar %window -|- SearchBot results for $qt($right($left($gettok(%r,2,1),-4),-1)) -|- Current channel is %sbClient.SearchChannel -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
+  ;titlebar %window -|- SearchBot results for $qt($right($left($gettok(%r,2,1),-4),-1)) -|- Current channel is %sbClient.SearchChannel -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
+  set %sbClient.string $right($left($gettok(%r,2,1),-4),-1)
+  titlebar %window -|- SearchBot results for $qt(%sbClient.string) -|- Current channel is %sbClient.SearchChannel -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   if (%sbClient.storetxt) {
     var %filename = $+(",$mircdir,SearchBot results,\,$gettok(%r,2,1),")
     var %filename = $replace(%filename,.txt,$+(.,$asctime(yyyy-mm-dd-HH-mm-ss),.txt))
@@ -743,11 +771,24 @@ on *:filercvd:Se*results*for*: {
     echo 4 -sa [ERROR] Try & manually open the file, if this fails (access denied) look at the security details for the file.
   }
 }
+; $1- = filename
+alias sbClient.MakeReg {
+  var %f = $replace($1-,\Q,\\Q,\E,\\E), %r = /^, %c = 1
+  while ($gettok(%f,%c,32)) {
+    var %r = %r $+ (?=.*\Q $+ $v1 $+ \E)
+    inc %c
+  }
+  var %r = %r $+ /iu
+  return %r
+}
+; no args, only used in *:filercvd:*: event
+alias -l sbClient.IsValidFile return $regex(%sbClient.RequestedFile,$sbClient.MakeReg($file($filename).name $file($filename).ext))
 on *:filercvd:*: {
   ; check if we requested a file.
   if (!%sbClient.RequestedFile) return
   ; check if it was this file.
-  if ($replace($nopath($filename),_,*) !iswm %sbClient.RequestedFile) return
+  ;if ($replace($nopath($filename),_,*) !iswm %sbClient.RequestedFile) return
+  if (!$sbClient.IsValidFile) return
 
   ; clear setting
   sbClient.StopQueue
@@ -1031,10 +1072,15 @@ alias sbClient.QueueSize {
   reseterror
   return 0
 }
+alias sbClient.UpdateQueueTitle {
+  if (!$sbClient.window.queue) return
+  titlebar @sbClientQueue $line(@sbClientQueue,0) Files in Queue. Right-Click for Options.
+}
 alias sbClient.ClearQueue {
   if (!$sbClient.window.queue) return
   clear @sbClientQueue
   window -b @sbClientQueue
+  sbClient.UpdateQueueTitle
 }
 alias sbClient.StopQueue unset %sbClient.Requested*
 alias sbClient.StartQueue {
@@ -1049,14 +1095,15 @@ alias -l sbClient.requestfile {
   if ($sbClient.QueueSize == 0) return
   if (%sbClient.RequestedFile) return
 
-  var %c = 1, %cid = 0, %l = $line(@sbClientQueue,1), %nick = $left($gettok(%l,1,32),-1), %chan, %net
+  var %c = 1, %cid = 0, %l = $line(@sbClientQueue,1), %nick = $right($gettok(%l,1,32),-1), %chan, %net
   while ($gettok(%sbClient.Channels,%c,44) != $null) {
     var %cn = $v1, %chan = $gettok(%cn,1,64), %net = $gettok(%cn,2,64), %cid = $sbClient.cid(%net)
     scid %cid
     if (%nick ison %chan) break
     inc %c
   }
-  if ((!%cid) || (%nick == $null) || (%chan == $null) || (%net == $null)) return
+  if ((%cid !isnum 1-) || (%nick == $null) || (%chan == $null) || (%net == $null)) return
+  if (%nick !ison %chan) return
 
   dline -l @sbClientQueue 1
   window -b @sbClientQueue
@@ -1068,6 +1115,7 @@ alias -l sbClient.requestfile {
   if (%sbClient.RequestedHash) var %l = %sbClient.RequestedTrigger %sbClient.RequestedHash
   else var %l = %sbClient.RequestedTrigger %sbClient.RequestedFile
 
+  ;echo -s regfile: %cid :: %nick :: %chan :: %net :: %l ::
   if (($isalias(os.window.buffer)) && ($group(#SDFind) == on)) {
     if ($.os.window.buffer) {
       aline @OS.Buffer scid %cid msg %chan $(%l,0)
@@ -1081,7 +1129,7 @@ alias sbClient.window.queue {
   window -lzik0 @sbClientQueue -1 -1 600 300
   ; can fail...
   if (!$window(@sbClientQueue)) return 0
-  titlebar @sbClientQueue $line(@sbClientQueue,0) Files in Queue. Right-Click for Options.
+  sbClient.UpdateQueueTitle
   return 1
   :error
   reseterror
@@ -1099,6 +1147,7 @@ alias sbClient.queuerequest {
     return
   }
   aline -l @sbClientQueue %l
+  sbClient.UpdateQueueTitle
   window -b @sbClientQueue
 }
 
