@@ -7,7 +7,7 @@ DukeLupus
 Install:
 
 Unzip to mircdir/sbClient
-in mIRC type: /load -rs1 sbClient.sbClient.mrc
+in mIRC type: /load -rs1 sbClient\sbClient.mrc
 
 Setup:
 
@@ -20,3 +20,9 @@ press "Ok"
 Usage:
 
 Press F4 to open the search dialog.
+
+v2.24+
+Within the search results window there some keyboard shortcuts you can use:
+You can request a file by pressing `r` or `ctrl-r` to request the file & remove from the results list.
+  This will call the default autoget method set in options.
+You can search within the results by pressing `ctrl-z` & entering a wildcard search pattern. (NB: ctrl-f wont work in a @custom window)

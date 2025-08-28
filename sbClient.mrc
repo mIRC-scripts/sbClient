@@ -86,38 +86,22 @@
 ; added 'Sort Results' menu item.
 ; 2.23.30
 ; changed dialogs to use option map, should improve the look on high dpi screens.
+; 2.24
+; added sbClient.Display alias to make changing how messages are displayed easier.
+; replaced some /halt calls with /returns
+; added more key shortcuts for @sbClient.* windows. r = request file, ctrl-r = request file & delete from window, ctrl-z = search within window
+; added Internal, AutoGet, vPowerGet default request methods to options.
+; added an internal autoget method, allowing you to queue up & d/l files (this is a minimal autoget & doesnt have all the features of AutoGet etc..)
 ;
 
-alias sbClient.version return 2.23.30
+alias sbClient.version return 2.24
 
 ; Ook: added shortcut for dll
-alias sbClientdll return $dll($qt($scriptdirsbClient.dll),$1,$2-)
+alias sbClientdll return $dll($scriptdirsbClient.dll,$1,$2-)
 
-dialog sbClient_options_old {
-  title sbClient v $+ $sbClient.version
-  size -1 -1 198 202
-  option dbu notheme
-  tab "General", 1, 1 3 196 173
-  tab "SearchBot", 6
-  button "Close", 11, 20 183 70 12, ok
-  button "Search dialog", 16, 108 183 70 12
-  box "Channels", 21, 2 19 192 140, tab 6
-  check "Store search result .txt files", 26, 5 162 79 8, tab 6
-  list 31, 6 37 134 45, tab 6 vsbar size
-  button "Add", 36, 143 37 45 45, tab 6
-  text "Current channels:", 41, 6 27 50 8, tab 6
-  text "SearchBot channels:", 46, 6 84 64 8, tab 6
-  list 51, 6 93 134 45, tab 6 vsbar size
-  button "Remove", 56, 143 93 45 45, tab 6
-  button "Request search triggers", 61, 6 143 182 13, tab 6 flat
-  check "No max results limit for local searches (not recommended)", 66, 10 24 180 8, tab 1
-  check "Check for a new sbClient version on mIRC start", 71, 10 35 125 8, tab 1
-  button "Check now", 76, 137 35 54 8, tab 1 flat multi
-  box "sbClient", 81, 8 59 182 93, tab 1
-  text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 80 120 40, tab 1 multi
-  link "www.dukelupus.com", 91, 68 157 62 8, tab 1
-  check "Group @find results", 96, 10 46 81 8, tab 1
-}
+; $1- = text to display
+alias -l sbClient.Display echo -s 1,9<<sbClient>> $1-
+
 dialog sbClient_options {
   title sbClient v $+ $sbClient.version
   size -1 -1 240 202
@@ -138,9 +122,17 @@ dialog sbClient_options {
   check "No max results limit for local searches (not recommended)", 66, 10 24 200 8, tab 1
   check "Check for a new sbClient version on mIRC start", 71, 10 35 200 8, tab 1
   button "Check now", 76, 177 35 54 8, tab 1 flat multi
-  box "sbClient", 81, 8 59 182 93, tab 1
-  text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 80 120 40, tab 1 multi
-  link "www.dukelupus.com", 91, 68 157 80 8, tab 1
+
+  check "Enable Version response", 110, 10 55 100 11, tab 1
+
+  box "Default Request Method", 99, 8 71 180 25, tab 1
+  radio "Internal",            100, 13 81 50 11, tab 1 group
+  radio "Autoget",             101, 64 81 50 11, tab 1
+  radio "vPowerGet.NET",       102, 114 81 70 11, tab 1
+
+  box "sbClient", 81, 8 100 182 40, tab 1
+  text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 110 120 40, tab 1 multi
+  link "www.dukelupus.com", 91, 68 150 80 8, tab 1
   check "Group @find results", 96, 10 46 81 8, tab 1
 }
 on *:dialog:sbClient_options:init:0: {
@@ -159,17 +151,20 @@ on *:dialog:sbClient_options:init:0: {
   didtok sbClient_options 51 44 %sbClient.channels
   if (%sbClient.nomax == 1) did -c sbClient_options 66
   if (%sbClient.checkver == 1) did -c sbClient_options 71
+  if (%sbClient.defreqmethod isnum 100-102) did -c sbClient_options $v1
+  else did -c sbClient_options 100
+  if (%sbClient.versionresponse) did -c $dname 110
 }
 on *:dialog:sbClient_options:sclick:36: {
-  if (!$did(31).seltext) halt
-  if ($istok(%sbClient.channels,$did(31).seltext,44)) halt
+  if (!$did(31).seltext) return
+  if ($istok(%sbClient.channels,$did(31).seltext,44)) return
   set %sbClient.channels $addtok(%sbClient.channels,$did(31).seltext,44)
   did -r sbClient_options 51
   didtok sbClient_options 51 44 %sbClient.channels
   sbClient.GetTrigger $did(31).seltext
 }
 on *:dialog:sbClient_options:sclick:56: {
-  if (!$did(51).seltext) halt
+  if (!$did(51).seltext) return
   set %sbClient.channels $remtok(%sbClient.channels,$did(51).seltext,44)
   did -r sbClient_options 51
   didtok sbClient_options 51 44 %sbClient.channels
@@ -177,11 +172,16 @@ on *:dialog:sbClient_options:sclick:56: {
 on *:dialog:sbClient_options:sclick:91: url -an http://www.dukelupus.com
 on *:dialog:sbClient_options:sclick:76: sbClient.update
 on *:dialog:sbClient_options:sclick:96: set %sbClient.groupfind $did(96).state
+on *:dialog:sbClient_options:sclick:110: set %sbClient.versionresponse $did(110).state
 on *:dialog:sbClient_options:close:*: {
   set %sbClient.storetxt $did(26).state
   set %sbClient.nomax $did(66).state
   set %sbClient.checkver $did(71).state
   set %sbClient.groupfind $did(96).state
+  set %sbClient.versionresponse $did(110).state
+  if ($did(101).state) set %sbClient.defreqmethod 101
+  elseif ($did(102).state) set %sbClient.defreqmethod 102
+  else set %sbClient.defreqmethod 100
 }
 on *:dialog:sbClient_options:sclick:61: {
   var %cnter = 1
@@ -197,9 +197,10 @@ on *:dialog:sbClient_options:sclick:16: {
   dialog -x sbClient_options sbClient_options
   dialog -am sbClient_search sbClient_search
 }
+on *:dialog:sbClient_options:sclick:100,101,102: set %sbClient.defreqmethod $did
 alias sbClient.GetTrigger {
   scon $sbClient.GetNetworkID($1)
-  echo -s 1,9<<sbClient>> Requesting SearchBot trigger from $sbClient.GetChannel($1) (network $gettok($1,2,64) $+ ).
+  sbClient.Display Requesting SearchBot trigger from $sbClient.GetChannel($1) (network $gettok($1,2,64) $+ ).
   msg $sbClient.GetChannel($1) @SearchBot-trigger
   set $+(%,sbClient.,$1,.requested) 1
 }
@@ -215,26 +216,12 @@ ctcp *:TRIGGER:?: {
   if ($($+(%,sbClient.,$3,@,$2,.requested),2) == 1) {
     set $+(%,sbClient.,$3,@,$2,.trigger) $4
     unset $+(%,sbClient.,$3,@,$2,.requested)
-    echo -s 1,9<<sbClient>> Received SearchBot trigger from $3 (network $2 $+ ): $4
+    sbClient.Display Received SearchBot trigger from $3 (network $2 $+ ): $4
   }
 }
-;ctcp *:VERSION:?: {
-;  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
-;}
-dialog sbClient_search_old {
-  title "sbClient search dialog"
-  size -1 -1 219 103
-  option dbu notheme
-  edit "", 5, 6 6 207 10
-  button "Search!", 1, 5 19 207 10, flat default
-  check "Local search in folder:", 10, 12 35 77 8
-  text "Not selected", 6, 50 47 163 8
-  button "Select folder", 15, 12 47 36 9, flat
-  check "Online SearchBot search in channel:", 11, 12 61 97 8
-  combo 20, 112 61 101 35, drop
-  check "Use separate windows for each search", 16, 12 73 105 8
-  check "@find search in channel:", 25, 12 86 97 8
-  combo 21, 112 86 101 35, drop
+ctcp *:VERSION:?: {
+  if (!%sbClient.versionresponse) return
+  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
 }
 dialog sbClient_search {
   title "sbClient search dialog"
@@ -364,7 +351,7 @@ alias sbClient.SearchDone {
     else window -ek0lmwzn %window Arial 12
   }
   else clear %window
-  titlebar %window -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $1 results -|- rclick for options -|-
+  titlebar %window -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $1 results -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   sbClient.LS.Loadresults %window $2-
   if ($dialog(sbClient_search) != $null) dialog -t sbClient_search Search for $qt(%sbClient.string) Complete.
 }
@@ -419,6 +406,7 @@ alias sbClient.Online {
   return %c
 }
 on *:input:@sbClient.local*,@sbClient.OldResults: {
+  ; needs to be /halt
   if ($left($1-,1) == $comchar) halt
   if (%sbClient.searching == 1) {
     if ($input(Local search seems to be already active. Do you want to stop active search and start your current search?,yqd,Local search is active) == $true) { sbClient.Cleanup }
@@ -431,6 +419,70 @@ on *:input:@sbClient.local*,@sbClient.OldResults: {
     halt
   }
   sbClient.DoLocalSearch %sstring
+}
+; $1 = window
+alias -l sbClient.SendToAutoGet {
+  if (!$window($1)) return
+
+  var %lines = $sline($1,0)
+  if (!%lines) return
+
+  var %path = $nofile($script(AutoGet.mrc))
+  .fopen MTlisttowaiting $+(",%path,AGwaiting.ini,")
+  if ($fopen(MTlisttowaiting).err) return
+  .fseek -l MTlisttowaiting $lines($+(",%path,AGwaiting.ini,"))
+  if ($fopen(MTlisttowaiting).err) return
+  var %i = 1, %j = 0
+  while (%i <= %lines) {
+    var %temp = $MTlisttowaiting($sline($1,%i))
+    inc %j $gettok(%temp,1,32)
+    if ($sbClient.Online($sline($1,%i))) cline 10 $1 $sline($1,%i).ln
+    else cline 6 $1 $sline($1,%i).ln
+    inc %i
+  }
+  .fclose MTlisttowaiting
+  if (%MTautorequest == 1) MTkickstart $gettok(%temp,2,32)
+  MTwhosinque
+  if ($dialog(Autoget)) updatewaitinglist
+  if (%MTecho) echo -s %MTlogo Added %j File(s) To Waiting List From sbClient
+}
+; $1 = window
+alias -l sbClient.SendTovPowerGet {
+  if (!$window($1)) return
+
+  var %lines = $sline($1,0)
+  if (!%lines) return
+  var %cnter = 1
+  while (%cnter <= %lines) {
+    if ($com(vPG.NET,AddFiles,1,bstr,$sline($1,%cnter)) == 0) echo -s vPG.NET: AddFiles failed
+    if ($sbClient.Online($sline($1,%cnter))) cline 10 $1 $sline($1,%cnter).ln
+    else cline 6 $1 $sline($1,%cnter).ln
+    inc %cnter
+  }
+}
+; $1 = window
+alias -l sbClient.SendToInternal {
+  if (!$window($1)) return
+  if (!$sline($1,0)) return
+
+  var %cnter = 1
+  while ($sline($1,%cnter) != $null) {
+    var %l = $v1, %ln = $sline($1,%cnter).ln
+
+    if ($sbClient.Online(%l)) cline 10 $1 %ln
+    else cline 6 $1 %ln
+
+    sbClient.queuerequest $1 %ln
+
+    inc %cnter
+  }
+  titlebar $1 -|- $line($1,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($1,0) line(s) sent to queue -|-
+}
+; $1 = window
+alias -l sbClient.SendToDefault {
+  if (%sbClient.defreqmethod == 101) sbClient.SendToAutoGet $1
+  elseif (%sbClient.defreqmethod == 102) sbClient.SendTovPowerGet $1
+  else sbClient.SendToInternal $1
 }
 menu @sbClient.OldResults,@sbClient.@find.results,@sbClient.combined {
   Check online status: sbClient.ColorNicks $active 1
@@ -452,7 +504,7 @@ menu @sbClient.* {
       else cline 3 $active %cnter
       inc %cnter
     }
-    titlebar $active -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $line($active,0) results -|- rclick for options -|-
+    titlebar $active -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $line($active,0) results -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   }
   Remove File Types: {
     window -h @sbClient.tmp
@@ -461,12 +513,12 @@ menu @sbClient.* {
     filter -wwxzg $menu @sbClient.tmp /(?:\.(?: $+ %types $+ )\s|[\(\[] $+ %types $+ [\)\]])/i
     filter -wwzc @sbClient.tmp $menu *
     window -c @sbClient.tmp
-    titlebar $active -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $line($active,0) results -|- rclick for options -|-
+    titlebar $active -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $line($active,0) results -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   }
   -
   Copy line(s) to clipboard: {
     var %t = $sline($active,0), %cnter = 1
-    if (!%t) halt
+    if (!%t) return
     clipboard
     while ($sline($active,%cnter) != $null) {
       var %l = $v1
@@ -477,40 +529,18 @@ menu @sbClient.* {
       else clipboard -n $iif($mouse.key & 2,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
-    titlebar $active -|- $line($active,0) lines -|- rclick for options -|- $sline($active,0) line(s) copied to clipboard -|-
+    titlebar $active -|- $line($active,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($active,0) line(s) copied to clipboard -|-
   }
   Sort Results: window -bs $menu
-  $iif(!$script(AutoGet.mrc), $style(2)) Send to AutoGet 7: {
-    var %path = $nofile($script(AutoGet.mrc))
-    .fopen MTlisttowaiting $+(",%path,AGwaiting.ini,")
-    if ($fopen(MTlisttowaiting).err) return
-    .fseek -l MTlisttowaiting $lines($+(",%path,AGwaiting.ini,"))
-    if ($fopen(MTlisttowaiting).err) return
-    var %i = 1, %j = 0
-    while (%i <= $sline($active,0)) {
-      var %temp = $MTlisttowaiting($sline($active,%i))
-      inc %j $gettok(%temp,1,32)
-      if ($sbClient.Online($sline($active,%i))) cline 10 $active $sline($active,%i).ln
-      else cline 6 $active $sline($active,%i).ln
-      inc %i
-    }
-    .fclose MTlisttowaiting
-    if (%MTautorequest == 1) MTkickstart $gettok(%temp,2,32)
-    MTwhosinque
-    if ($dialog(Autoget)) updatewaitinglist
-    if (%MTecho) echo -s %MTlogo Added %j File(s) To Waiting List From sbClient
-  }
-  $iif(!$script(vPowerGet.net.mrc), $style(2)) Send to vPowerGet.NET: {
-    var %lines = $sline($active,0)
-    if (!%lines) return
-    var %cnter = 1
-    while (%cnter <= %lines) {
-      if ($com(vPG.NET,AddFiles,1,bstr,$sline($active,%cnter)) == 0) echo -s vPG.NET: AddFiles failed
-      if ($sbClient.Online($sline($active,%cnter))) cline 10 $active $sline($active,%cnter).ln
-      else cline 6 $active $sline($active,%cnter).ln
-      inc %cnter
-    }
-  }
+  Send line(s) to RequestQueue: sbClient.SendToInternal $active
+  $iif(!$script(AutoGet.mrc), $style(2)) Send to AutoGet 7: sbClient.SendToAutoGet $active
+  $iif(!$script(vPowerGet.net.mrc), $style(2)) Send to vPowerGet.NET: sbClient.SendTovPowerGet $active
+  -
+  Request Queue
+  .(Re)Start Queue: sbClient.StartQueue
+  .Stop Queue: sbClient.StopQueue
+  .Clear Queue: sbClient.ClearQueue
+  .Show Queue: if ($sbClient.window.queue) window -a @sbClientQueue
   -
   Combine all sbClient result windows: {
     var %c = 1, %win
@@ -536,7 +566,7 @@ menu @sbClient.* {
   -
   Save search results: {
     var %file = $+(",$sfile($mircdir, Save search results,Save),.txt")
-    if (!%file) halt
+    if (!%file) return
     .savebuf $active $replace(%file,.txt.txt",.txt")
   }
   Load saved results: sbClient.LoadOldResults $active
@@ -546,6 +576,21 @@ menu @sbClient.* {
   -
   Close: window -c $active
   -
+}
+menu @sbClientQueue {
+  $iif(!$sline($menu,0),$style(2)) Remove File: {
+    var %cnt = $sline($menu,0)
+    if (!%cnt) return
+    while (%cnt > 0) {
+      dline -l $menu $sline($menu,%cnt).ln
+      dec %cnt
+    }
+    window -b @sbClientQueue
+  }
+  -
+  (Re)Start Queue: sbClient.StartQueue
+  Stop Queue: sbClient.StopQueue
+  Clear Queue: sbClient.ClearQueue
 }
 ; $1 = @window
 alias -l sbClient.LoadOldResults {
@@ -558,7 +603,7 @@ alias -l sbClient.LoadOldResults {
     return
   }
   sbClient.LS.Loadresults @sbClient.OldResults %file
-  titlebar @sbClient.OldResults -|- File $qt($nopath(%file)) loaded. -|- $line(@sbClient.OldResults,0) lines -|- rclick for options -|-
+  titlebar @sbClient.OldResults -|- File $qt($nopath(%file)) loaded. -|- $line(@sbClient.OldResults,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
 }
 alias sbclient.GetFileName {
   var %r = /^(.*\.[a-z][a-z\d]{1,4})(?:\s|$)/
@@ -573,6 +618,9 @@ menu menubar,channel {
     if ($dialog(sbClient_search) == $null) dialog -am sbClient_search sbClient_search
     else dialog -v sbClient_search
   }
+  .Request Queue
+  ..Show Queue: if ($sbClient.window.queue) window -a @sbClientQueue
+  ..Stop Queue: sbClient.StopQueue
   .sbClient options: dialog -am sbClient_options sbClient_options
   .-
   .Load saved results: sbClient.LoadOldResults @sbClient.OldResults
@@ -586,35 +634,40 @@ menu menubar {
   }
 }
 on *:unload: {
-  echo -s 1,9<<sbClient>> Unloading...
-  echo -s 1,9<<sbClient>> Closing sbClient windows
+  sbClient.Display Unloading...
+  sbClient.Display Closing sbClient windows
   close -@sbClient.*
-  echo -s 1,9<<sbClient>> Removing variables...
+  sbClient.CloseQueue
+  sbClient.Display Removing variables...
   unset %sbClient.*
-  echo -s 1,9<<sbClient>> sbClient removed. Note that sbClient files were not deleted.
+  sbClient.Display sbClient removed. Note that sbClient files were not deleted.
 }
 on *:load: {
   if ($script != $script(1)) .load -rs1 $qt($script)
-  echo -s 1,9<<sbClient>> Loading sbClient v $+ $sbClient.version by DukeLupus
-  echo -s 1,9<<sbClient>> Check 12www.dukelupus.com1,9 for help and updates.
-  echo -s 1,9<<sbClient>> Checking sbClient.dll
-  if (!$isfile($qt($scriptdirsbClient.dll))) {
-    echo -s 1,9<<sbClient>> sbClient.dll not found in script folder. Loading stopped.
+  sbClient.Display Loading sbClient v $+ $sbClient.version by DukeLupus (Modified by Ook)
+  sbClient.Display Check 12www.dukelupus.com1,9 for help and updates.
+  if ($version < 7.72) sbClient.Display mIRC v7.72+ is recommended.
+  sbClient.Display Checking sbClient.dll
+  if (!$isfile($scriptdirsbClient.dll)) {
+    sbClient.Display sbClient.dll not found in script folder. Loading stopped.
     unload -rs $script
   }
-  else echo -s 1,9<<sbClient>> sbClient.dll version $sbClientdll(GetDllVersion, nothing) by Iczelion found.
-  ; Ook: check for connected status before sending ctcp
-  ;if (($me != DukeLupus) && ($status == connected)) .ctcp DukeLupus DLX $me is loading sbClient version $sbClient.version
-  echo -s 1,9<<sbClient>> Checking mUnzip.dll
-  if (!$isfile($qt($scriptdirmUnzip.dll))) {
-    echo -s 1,9<<sbClient>> mUnzip.dll not found in script folder. Loading stopped.
-    unload -rs $script
+  else sbClient.Display sbClient.dll version $sbClientdll(GetDllVersion, nothing) by Iczelion found.
+  sbClient.Display Checking mUnzip.dll
+  if ($version < 7.55) {
+    if (!$isfile($scriptdirmUnzip.dll)) {
+      sbClient.Display mUnzip.dll not found in script folder. Loading stopped.
+      unload -rs $script
+    }
+    else sbClient.Display mUnzip.dll found: $replace($dll($scriptdirmUnzip.dll, DLLInfo, .),S_OK,$null, $chr(32) $+ $chr(32), $chr(32))
   }
-  else echo -s 1,9<<sbClient>> mUnzip.dll found: $replace($dll($scriptdirmUnzip.dll, DLLInfo, .),S_OK,$null, $chr(32) $+ $chr(32), $chr(32))
-  echo -s 1,9<<sbClient>> Initializing variables...
-  %sbClient.storetxt = 1
-  %sbClient.checkver = 1
-  echo -s 1,9<<sbClient>> All done, sbClient successfully loaded
+  else sbClient.Display mIRC $+(v,$version) found, mUnzip.dll not required.
+  sbClient.Display Initializing variables...
+  set %sbClient.storetxt 1
+  set %sbClient.checkver 1
+  set %sbClient.versionresponse 1
+  set %sbClient.defreqmethod 100
+  sbClient.Display All done, sbClient successfully loaded
   .timer 1 0 dialog -am sbClient_options sbClient_options
 }
 alias sbClient.Check {
@@ -660,7 +713,7 @@ on *:filercvd:Se*results*for*: {
   sbClient.ColorNicks %window
   ; this line sorts window contents by nick
   ;window -bs %window
-  titlebar %window -|- SearchBot results for $qt($right($left($gettok(%r,2,1),-4),-1)) -|- Current channel is %sbClient.SearchChannel -|- rclick for options -|-
+  titlebar %window -|- SearchBot results for $qt($right($left($gettok(%r,2,1),-4),-1)) -|- Current channel is %sbClient.SearchChannel -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
   if (%sbClient.storetxt) {
     var %filename = $+(",$mircdir,SearchBot results,\,$gettok(%r,2,1),")
     var %filename = $replace(%filename,.txt,$+(.,$asctime(yyyy-mm-dd-HH-mm-ss),.txt))
@@ -674,6 +727,35 @@ on *:filercvd:Se*results*for*: {
     echo 4 -sa [ERROR] Unable to open search results, possible file access restrictions.
     echo 4 -sa [ERROR] Try & manually open the file, if this fails (access denied) look at the security details for the file.
   }
+}
+on *:filercvd:*: {
+  ; check if we requested a file.
+  if (!%sbClient.RequestedFile) return
+  ; check if it was this file.
+  if ($replace($nopath($filename),_,*) !iswm %sbClient.RequestedFile) return
+
+  ; clear setting
+  sbClient.StopQueue
+
+  ; get next file
+  sbClient.StartQueue
+}
+on *:getfail:*: {
+  ; check if we requested a file.
+  if (!%sbClient.RequestedTrigger) return
+  if (!%sbClient.RequestedFile) return
+  ; check if it was this file.
+  if ($replace($nopath($filename),_,*) !iswm %sbClient.RequestedFile) return
+
+  ; put file at the end of the list.  
+  aline -l @sbClientQueue %sbClient.RequestedTrigger %sbClient.RequestedFile
+  window -b @sbClientQueue
+
+  ; clear setting
+  sbClient.StopQueue
+
+  ; get next file
+  sbClient.StartQueue
 }
 on *:input:@sbClient.results*: {
   if ($left($1-,1) == $comchar) halt
@@ -718,7 +800,7 @@ on *:exit: sbClient.Cleanup
 alias sbClient.Cleanup {
   if (%sbClient.searching == 1) {
     sbClientdll Stop 1
-    %sbClient.searching = 0
+    set %sbClient.searching 0
   }
   var %f = $mircdirsbClient.ls.results.txt
   if ($isfile(%f)) {
@@ -741,11 +823,11 @@ on *:sockread:sbClient: {
     var %t
     sockread %t
     if (($gettok(%t,1,59) == sbClient) && ($gettok(%t,2,59) != $sbClient.version)) {
-      echo -s 1,9<<sbClient>> You should update sbClient. You are using version $sbClient.version $+ , but version $gettok(%t,2,59) is available from sbClient website at 12http://www.dukelupus.com
+      sbClient.Display You should update sbClient. You are using version $sbClient.version $+ , but version $gettok(%t,2,59) is available from sbClient website at 12http://www.dukelupus.com
       .sockclose sbClient
     }
     elseif (($gettok(%t,1,59) == sbClient) && ($gettok(%t,2,59) == $sbClient.version)) {
-      if ($dialog(sbClient_options)) echo -s 1,9<<sbClient>> You have current version of sbClient
+      if ($dialog(sbClient_options)) sbClient.Display You have current version of sbClient
       .sockclose sbClient
     }
   }
@@ -828,7 +910,7 @@ alias sbclient.FindResults {
   var %line = $+(!,$gettok($2-,2,33))
   aline -n @sbClient.@find.results %line
   window -b @sbClient.@find.results
-  titlebar @sbClient.@find.results -=- $line(@sbClient.@find.results,0) results so far -=- Right-click for options
+  titlebar @sbClient.@find.results -=- $line(@sbClient.@find.results,0) results so far -=- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find
   halt
 }
 menu @find.ServerData {
@@ -901,17 +983,118 @@ alias -l sbClient.mkdir {
   reseterror
   return 0
 }
-on *:KEYDOWN:@sbClient.*:*: {
+; $1 = @window
+alias sbClient.FindWindow {
+  var %txt = $input(Enter Search String,e,Find,%sbClient.Find.Text)
+  if (%txt == $null) return
+  if (%txt != %sbClient.Find.Text) {
+    set %sbClient.Find.Line 1
+    set %sbClient.Find.Text %txt
+  }
+  if (%sbClient.Find.Line >= $line($1,0)) set %sbClient.Find.Line 1
+  if ($fline($1,%sbClient.Find.Text,1,1,%sbClient.Find.Line)) {
+    set %sbClient.Find.Line $v1
+    sline -l $1 %sbClient.Find.Line
+    inc %sbClient.Find.Line
+  }
+  else {
+    set %sbClient.Find.Line 1
+  }
+}
+; $1 = window name
+alias sbClient.DeleteSelected {
+  if (!$sline($1,0)) return
+  while ($sline($1,0)) {
+    dline $1 $sline($1,1).ln
+  }
+  titlebar $1 -|- $line($1,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|-
+}
+alias sbClient.QueueSize {
+  if (!$sbClient.window.queue) return 0
+  return $line(@sbClientQueue,0)
+  :error
+  reseterror
+  return 0
+}
+alias sbClient.ClearQueue {
+  if (!$sbClient.window.queue) return
+  clear @sbClientQueue
+  window -b @sbClientQueue
+}
+alias sbClient.StopQueue unset %sbClient.Requested*
+alias sbClient.StartQueue {
+  if (!$sbClient.window.queue) return
+  sbClient.StopQueue
+
+  if ($sbClient.QueueSize == 0) sbClient.CloseQueue
+  else sbClient.requestfile
+}
+; no args
+alias -l sbClient.requestfile {
+  if ($sbClient.QueueSize == 0) return
+  if (%sbClient.RequestedFile) return
+
+  var %c = 1, %cid = 0, %l = $line(@sbClientQueue,1), %nick = $left($gettok(%l,1,32),-1), %chan, %net
+  while ($gettok(%sbClient.Channels,%c,44) != $null) {
+    var %cn = $v1, %chan = $gettok(%cn,1,64), %net = $gettok(%cn,2,64), %cid = $sbClient.cid(%net)
+    scid %cid
+    if (%nick ison %chan) break
+    inc %c
+  }
+  if ((!%cid) || (%nick == $null) || (%chan == $null) || (%net == $null)) return
+
+  dline -l @sbClientQueue 1
+  window -b @sbClientQueue
+
+  set %sbClient.RequestedTrigger $gettok(%l,1,32)
+  set %sbClient.RequestedFile $gettok(%l,2-,32)
+
+  if (($isalias(os.window.buffer)) && ($group(#SDFind) == on)) {
+    if ($.os.window.buffer) {
+      aline @OS.Buffer scid %cid msg %chan $(%l,0)
+      return
+    }
+  }
+  msg %chan %l
+}
+alias sbClient.window.queue {
+  if ($window(@sbClientQueue)) return 1
+  window -lzik0 @sbClientQueue -1 -1 600 300
+  ; can fail...
+  if (!$window(@sbClientQueue)) return 0
+  titlebar @sbClientQueue $line(@sbClientQueue,0) Files in Queue. Right-Click for Options.
+  return 1
+  :error
+  reseterror
+  return 0
+}
+alias sbClient.CloseQueue {
+  if ($window(@sbClientQueue)) window -c @sbClientQueue
+}
+; $1 = window, $2 = request line number
+alias sbClient.queuerequest {
+  if (!$sbClient.window.queue) return
+  var %l = $sbClient.GetFileName($line($1,$2))
+  if ($fline(@sbClientQueue,%l,0,1) > 1) {
+    sbClient.Display Request already in queue.
+    return
+  }
+  aline -l @sbClientQueue %l
+  window -b @sbClientQueue
+}
+
+on *:CHAR:@sbClient.*:*: {
   if ($keyrpt) return
+
+  ;echo -s char: $keyval :: $keychar :: $keyrpt :: $target
 
   ; handle bugs in this event that pre 7.11 mIRC's have.
   var %ctrlc = 0, %ctrlz = 0
   if (($keyval == 3) || (($keyval == 67) && ($mouse.key == 2))) var %ctrlc = 1
   if (($keyval == 26) || (($keyval == 90) && ($mouse.key == 2))) var %ctrlz = 1
 
-  if (%ctrlc || %ctrlz) {
-    ; ctrl-c or ctrl-z
-    ; ctrl-z copies the whole line.
+  var %w = $target
+  if (%ctrlc) {
     ; ctrl-c copies the line upto the end of the filename (only works with known file types)
     var %t = $sline($active,0), %cnter = 1
     if (!%t) return
@@ -925,14 +1108,59 @@ on *:KEYDOWN:@sbClient.*:*: {
       else clipboard -n $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
-    ;titlebar $active -|- $sline($active,0) line(s) copied to clipboard -|-
-    titlebar $active -|- $line($active,0) lines -|- rclick for options -|- $sline($active,0) line(s) copied to clipboard -|-
+    titlebar $active -|- $line($active,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($active,0) line(s) copied to clipboard -|-
   }
-  elseif ($keyval == 17) {
-    ; ctrl-f doesnt trigger? 17 is ctrl by its self
-    ;if ($input(find,e) != $null) findtext $v1
+  elseif (%ctrlz) {
+    ; search for text
+    ; NB: cant use ctrl-f
+    ; NB: /findtext doesn't work on list type @windows
+    .timer 1 0 sbClient.FindWindow %w
   }
-  ;echo -s key: $keyval
+  elseif ($keyval == 18) {
+    ; ctrl-r
+    ; request file & delete from list
+    if (!$sline(%w,0)) return
+
+    ; add requests
+    sbClient.SendToDefault $active
+
+    ; delete lines
+    var %cnter = $sline($active,0)
+    while (%cnter > 0) {
+      var %ln = $sline($active,%cnter).ln
+
+      dline %w %ln
+      sline %w %ln
+
+      dec %cnter
+    }
+
+    titlebar $active -|- $line($active,0) lines -|- rclick for options - r = request file - ctrl-r = req & delete - ctrl-z = find -|- $sline($active,0) line(s) added to request queue -|-
+  }
+  elseif ($keyval == 114) {
+    ; r
+    ; request file...
+    if (!$sline(%w,0)) return
+
+    ; colour lines
+    var %cnter = 1
+    while ($sline($active,%cnter) != $null) {
+      var %l = $v1, %ln = $sline($active,%cnter).ln
+
+      if ($sbClient.Online(%l)) cline 10 $active %ln
+      else cline 6 $active %ln
+
+      inc %cnter
+    }
+    ; add requests
+    sbClient.SendToDefault $active
+  }
+}
+on *:KEYUP:@sbClient.*:*: {
+  if (($keyval == 46) || ($keyval == 8)) {
+    ; del or backspace
+    sbClient.DeleteSelected $target
+  }
 }
 ;
 ;
