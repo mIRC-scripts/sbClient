@@ -3,3 +3,20 @@ No lengthy readme. If you need any help, go to http://www.dukelupus.com - in the
 As a last resort, send me an e-mail to dukelupus@gmail.com - but beware, that is not my main account and I don't check it often. Please also give your version of sbClient, mIRC and Windows.
 
 DukeLupus
+
+Install:
+
+Unzip to mircdir/sbClient
+in mIRC type: /load -rs1 sbClient.sbClient.mrc
+
+Setup:
+
+Open sbClient Options from the channel or command menus
+goto the searchbot tab
+click on a channel that has a searchbot in it, then click "Add"
+click on "Request Triggers"
+press "Ok"
+
+Usage:
+
+Press F4 to open the search dialog.

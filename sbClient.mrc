@@ -75,14 +75,25 @@
 ; Updated sbClient.dll to v2.0.4.18
 ; 2.23.26
 ; Updated sbClient.dll to v2.0.4.19
+; 2.23.27
+; added sbClient.mkdir alias to provide error protected mkdir
+; fixed bugs in file recieved event due to file name changes in latest searchbots
+; changed `remove offline nicks` filter in search results window to also remove all non-nick lines
+; 2.23.28
+; added $comchar support & compatibility code
+; 2.23.29
+; changed file recieved code to handle Seek... & Search... filenames
+; added 'Sort Results' menu item.
+; 2.23.30
+; changed dialogs to use option map, should improve the look on high dpi screens.
 ;
 
-alias sbClient.version return 2.23.26
+alias sbClient.version return 2.23.30
 
 ; Ook: added shortcut for dll
 alias sbClientdll return $dll($qt($scriptdirsbClient.dll),$1,$2-)
 
-dialog sbClient_options {
+dialog sbClient_options_old {
   title sbClient v $+ $sbClient.version
   size -1 -1 198 202
   option dbu notheme
@@ -105,6 +116,31 @@ dialog sbClient_options {
   box "sbClient", 81, 8 59 182 93, tab 1
   text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 80 120 40, tab 1 multi
   link "www.dukelupus.com", 91, 68 157 62 8, tab 1
+  check "Group @find results", 96, 10 46 81 8, tab 1
+}
+dialog sbClient_options {
+  title sbClient v $+ $sbClient.version
+  size -1 -1 240 202
+  option map notheme
+  tab "General", 1, 1 3 236 173
+  tab "SearchBot", 6
+  button "Close", 11, 20 183 70 12, ok
+  button "Search dialog", 16, 148 183 70 12
+  box "Channels", 21, 2 22 230 140, tab 6
+  check "Store search result .txt files", 26, 5 164 200 8, tab 6
+  list 31, 6 40 174 45, tab 6 vsbar size
+  button "Add", 36, 183 40 45 45, tab 6
+  text "Current channels:", 41, 6 30 100 8, tab 6
+  text "SearchBot channels:", 46, 6 87 100 8, tab 6
+  list 51, 6 96 174 45, tab 6 vsbar size
+  button "Remove", 56, 183 96 45 45, tab 6
+  button "Request search triggers", 61, 6 146 182 13, tab 6 flat
+  check "No max results limit for local searches (not recommended)", 66, 10 24 200 8, tab 1
+  check "Check for a new sbClient version on mIRC start", 71, 10 35 200 8, tab 1
+  button "Check now", 76, 177 35 54 8, tab 1 flat multi
+  box "sbClient", 81, 8 59 182 93, tab 1
+  text "Here will be some kind of intro text as soon as I figure out what it will be", 86, 15 80 120 40, tab 1 multi
+  link "www.dukelupus.com", 91, 68 157 80 8, tab 1
   check "Group @find results", 96, 10 46 81 8, tab 1
 }
 on *:dialog:sbClient_options:init:0: {
@@ -175,17 +211,17 @@ alias sbClient.GetNetworkID {
     inc %cnter
   }
 }
-ctcp *:TRIGGER: {
+ctcp *:TRIGGER:?: {
   if ($($+(%,sbClient.,$3,@,$2,.requested),2) == 1) {
     set $+(%,sbClient.,$3,@,$2,.trigger) $4
     unset $+(%,sbClient.,$3,@,$2,.requested)
     echo -s 1,9<<sbClient>> Received SearchBot trigger from $3 (network $2 $+ ): $4
   }
 }
-ctcp *:VERSION: {
-  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
-}
-dialog sbClient_search {
+;ctcp *:VERSION:?: {
+;  if ($network != DejaToons) .ctcpreply $nick VERSION 1,9<<sbClient>> version $sbClient.version by DukeLupus.1,15 Get it from 12,15http://www.dukelupus.com (Modified by Ook)
+;}
+dialog sbClient_search_old {
   title "sbClient search dialog"
   size -1 -1 219 103
   option dbu notheme
@@ -197,6 +233,21 @@ dialog sbClient_search {
   check "Online SearchBot search in channel:", 11, 12 61 97 8
   combo 20, 112 61 101 35, drop
   check "Use separate windows for each search", 16, 12 73 105 8
+  check "@find search in channel:", 25, 12 86 97 8
+  combo 21, 112 86 101 35, drop
+}
+dialog sbClient_search {
+  title "sbClient search dialog"
+  size -1 -1 240 110
+  option map notheme
+  edit "", 5, 6 6 230 12
+  button "Search!", 1, 5 21 230 10, flat default
+  check "Local search in folder:", 10, 12 35 200 8
+  text "Not selected", 6, 60 47 170 8
+  button "Select folder", 15, 12 47 45 9, flat
+  check "Online SearchBot search in channel:", 11, 12 61 130 8
+  combo 20, 142 61 95 35, drop
+  check "Use separate windows for each search", 16, 12 73 140 8
   check "@find search in channel:", 25, 12 86 97 8
   combo 21, 112 86 101 35, drop
 }
@@ -239,19 +290,10 @@ on *:dialog:sbClient_search:sclick:10: set %sbClient.menu.local $did(10).state
 on *:dialog:sbClient_search:sclick:11: set %sbClient.menu.channel $did(11).state
 on *:dialog:sbClient_search:sclick:25: set %sbClient.find.channel $did(25).state
 on *:dialog:sbClient_search:sclick:1: {
-  if ((!$did(10).state) && (!$did(25).state) && (!$did(11).state)) {
-    sbClient.error You really should choose at least one search method.
-    halt
-  }
-  if ($did(5).text == $null) {
-    sbClient.error No search string!
-    halt
-  }
+  if ((!$did(10).state) && (!$did(25).state) && (!$did(11).state)) { sbClient.error You really should choose at least one search method. | return }
+  if ($did(5).text == $null) { sbClient.error No search string! | return }
   var %sstring = $sbClient.FixString($did(5).text)
-  if (%sstring == $null) {
-    sbClient.error I don't like your search string!
-    halt
-  }
+  if (%sstring == $null) { sbClient.error I don't like your search string! | return }
   if ($did(10).state) {
     ; do local search
     if (%sbClient.searching == 1) {
@@ -259,18 +301,18 @@ on *:dialog:sbClient_search:sclick:1: {
         sbClientdll Stop 1
         set %sbClient.searching 0
       }
-      else halt
+      else return
       if ($did(11).state) goto chansearch
     }
     if (!%sbClient.ListFolder) {
       sbClient.error No list folder!
       if ($did(11).state) goto chansearch
-      halt
+      return
     }
     if ($findfile(%sbClient.ListFolder,*.txt,0,1) == 0) {
       sbClient.error There are no lists in the selected folder!
       if ($did(11).state) goto chansearch
-      halt
+      return
     }
     sbClient.DoLocalSearch %sstring
   }
@@ -281,9 +323,9 @@ on *:dialog:sbClient_search:sclick:1: {
     scon $sbClient.GetNetworkID($did(21).seltext) msg $sbClient.GetChannel($did(21).seltext) @find %sstring
   }
   if ($did(11).state) {
-    if (!$did(20).seltext) { sbClient.error No channel selected! | halt }
+    if (!$did(20).seltext) { sbClient.error No channel selected! | return }
     var %schan = $did(20).seltext
-    if ($sbClient.Check(%schan,%sstring) == 0) halt
+    if ($sbClient.Check(%schan,%sstring) == 0) return
     set %sbClient.SearchChannel %schan
     sbClient.DoSearch %schan %sstring
   }
@@ -313,7 +355,7 @@ alias sbClient.SearchDone {
   if ($1 == 0) {
     if ($dialog(sbClient_search) != $null) dialog -t sbClient_search No results for $qt(%sbClient.string)
     else dialog -am sbClient_search sbClient_search
-    halt
+    return
   }
   if (%sbClient.Separate) var %window = $+(@sbClient.local.,$gettok(%sbClient.string,1,32))
   else var %window = @sbClient.local
@@ -346,6 +388,8 @@ alias sbClient.LS.Loadresults {
   if (sbClient.ls.results.txt == $nopath(%file)) {
     if (!$sbClient.remove(%file)) sbClient.error Unable to remove %file
   }
+  ; this line sorts results by nick
+  ;window -bs %sbClient.window
 }
 alias -l sbClient.window.filter {
   ; if using !* filter then its never going to be $null even after removing $chr(9)
@@ -375,7 +419,7 @@ alias sbClient.Online {
   return %c
 }
 on *:input:@sbClient.local*,@sbClient.OldResults: {
-  if ($left($1-,1) == /) halt
+  if ($left($1-,1) == $comchar) halt
   if (%sbClient.searching == 1) {
     if ($input(Local search seems to be already active. Do you want to stop active search and start your current search?,yqd,Local search is active) == $true) { sbClient.Cleanup }
     else halt
@@ -397,13 +441,15 @@ menu @sbClient.* {
     var %cnter = 1
     while (%cnter <= $line($active,0)) {
       var %line = $line($active,%cnter)
-      if ($left(%line,1) == $chr(33)) {
-        if (!$sbClient.Online(%line)) {
-          dline $active %cnter
-          continue
-        }
-        else cline 3 $active %cnter
+      if ($asc(%line) != 33) {
+        dline $active %cnter
+        continue
       }
+      if (!$sbClient.Online(%line)) {
+        dline $active %cnter
+        continue
+      }
+      else cline 3 $active %cnter
       inc %cnter
     }
     titlebar $active -|- sbClient local search results for $qt(%sbClient.string) -|- $findfile(%sbClient.ListFolder,*.txt,0,1) lists searched -|- $line($active,0) results -|- rclick for options -|-
@@ -431,8 +477,9 @@ menu @sbClient.* {
       else clipboard -n $iif($mouse.key & 2,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
-    titlebar $active -|- $sline($active,0) line(s) copied to clipboard -|-
+    titlebar $active -|- $line($active,0) lines -|- rclick for options -|- $sline($active,0) line(s) copied to clipboard -|-
   }
+  Sort Results: window -bs $menu
   $iif(!$script(AutoGet.mrc), $style(2)) Send to AutoGet 7: {
     var %path = $nofile($script(AutoGet.mrc))
     .fopen MTlisttowaiting $+(",%path,AGwaiting.ini,")
@@ -466,18 +513,17 @@ menu @sbClient.* {
   }
   -
   Combine all sbClient result windows: {
-    var %c = 1
-    while (%c <= $window(@sbClient.*,0)) {
-      if ($window(@sbClient.*,%c) == @sbClient.combined) { inc %c | continue }
-      var %win = $addtok(%win, $window(@sbClient.*,%c),44)
+    var %c = 1, %win
+    while ($window(@sbClient.*,%c) != $null) {
+      if ($v1 != @sbClient.combined) var %win = $addtok(%win,$v1,44)
       inc %c
     }
     if (!$window(@sbClient.combined)) window -slk0wnz @sbClient.combined Arial 12
-    var %num = $numtok(%win,44), %v = 1
-    while (%v <= %num) {
-      var %b = 1
-      while (%b <= $line($gettok(%win,%v,44),0)) {
-        var %line = $line($gettok(%win,%v,44),%b)
+    var %v = 1
+    while ($gettok(%win,%v,44) != $null) {
+      var %b = 1, %w = $v1
+      while (%b <= $line(%w,0)) {
+        var %line = $line(%w,%b)
         if ($left(%line,1) == !) aline -n @sbClient.combined %line
         inc %b
       }
@@ -584,44 +630,53 @@ alias sbClient.DoSearch {
   scon $sbClient.GetNetworkID($1)
   msg $sbClient.GetChannel($1) $($+(%,sbClient.,$1,.trigger),2) $2-
 }
-on *:filercvd:*SearchBot*results*for*: {
-  var %resultdir = $+($mircdir,SearchBot results)
-  if (!$isdir($qt(%resultdir))) .mkdir $qt(%resultdir)
-  if ($right($nopath($filename),4) == .zip) {
-    if (OK isin $dll($scriptdirmUnzip.dll,Unzip,-oM *.txt $qt($filename) $qt(%resultdir))) {
-      if ($sbClient.remove($filename)) var %rfile = $+(",%resultdir,\, SearchBot_results_for_,$replace($mid($nopath($filename),23-),_,$chr(32),.txt.zip,.txt),")
-      else { sbClient.error Unable to remove archive: $filename | halt }
+on *:filercvd:Se*results*for*: {
+  var %resultdir = $+($mircdir,SearchBot results), %fn = $nopath($filename)
+  ; try to determine if its a valid results file & not something else.
+  if (!$regex(%fn,/^(Se(?:arch|ek)\w+?)[_\s]results[_\s]for[_\s]/i)) return
+  if (!$isdir(%resultdir)) {
+    if (!$sbClient.mkdir(%resultdir)) { sbClient.error Unable to make folder: %resultdir | halt }
+  }
+  var %r = $regsubex(%fn,/(Se(?:arch|ek)\w+?)[_\s]results[_\s]for[_\s](.*)$/,$+(\1_results_for_,$chr(1),$replace(\2,_,$chr(32),.txt.zip,.txt)))
+  if ($right(%fn,4) == .zip) {
+    if ($version < 7.55) {
+      if (OK !isin $dll($scriptdirmUnzip.dll,Unzip,-oM *.txt $qt($filename) $qt(%resultdir))) { sbClient.error Unzipping of the results failed! | halt }
     }
-    else { sbClient.error Unzipping of the results failed! | halt }
+    else {
+      if (!$zip($filename,eo,%resultdir)) { sbClient.error Unzipping of the results failed! | halt }
+    }
+    if (!$sbClient.remove($filename)) { sbClient.error Unable to remove archive: $filename | halt }
+    var %rfile = $+(",%resultdir,\,$gettok(%r,1,1),$gettok(%r,2,1),")
   }
   else {
-    var %rfile = $+(",%resultdir,$filename,")
+    var %rfile = $+(",%resultdir,%fn,")
     if (!$sbClient.rename($filename,%rfile)) { sbClient.error Unable to move file: $filename | halt }
   }
-  var %a = $replace($nopath(%rfile),_,$chr(32),SearchBot_results_for_,$null,SearchBot results for,$null,.txt,$null,.zip,$null,$chr(32),.)
+  var %a = $replace($gettok(%r,2,1),.txt,$null,.zip,$null,$chr(32),.)
   if (%sbClient.Separate) var %window = @sbClient.results. $+ %a
   else var %window = @sbClient.results
   window -ek0lmwz %window Arial 12
   if (!$sbClient.loadbuf(-r %window %rfile)) { sbClient.error Unable to load %rfile | window -c %window | halt }
   sbClient.ColorNicks %window
-  titlebar %window -|- SearchBot results for $qt($remove($nopath(%rfile),SearchBot_results_for_,SearchBot results for,")) -|- Current channel is %sbClient.SearchChannel -|- rclick for options -|-
+  ; this line sorts window contents by nick
+  ;window -bs %window
+  titlebar %window -|- SearchBot results for $qt($right($left($gettok(%r,2,1),-4),-1)) -|- Current channel is %sbClient.SearchChannel -|- rclick for options -|-
   if (%sbClient.storetxt) {
-    var %filename = $+(",$mircdir,SearchBot results,\,$remove($nopath(%rfile),SearchBot_results_for_,"),")
-    if ($isfile(%filename)) {
-      %filename = $replace(%filename,.txt,$+(.,$asctime(HH-mm-ss),.txt)) 
-      if (!$sbClient.rename(%rfile,%filename)) sbClient.error Unable to rename %rfile to %filename
-    }
+    var %filename = $+(",$mircdir,SearchBot results,\,$gettok(%r,2,1),")
+    var %filename = $replace(%filename,.txt,$+(.,$asctime(yyyy-mm-dd-HH-mm-ss),.txt))
+    if ($isfile(%filename)) var %filename = $replace(%filename,.txt,$+(.,$ticks,.txt))
+    if (!$sbClient.rename(%rfile,%filename)) sbClient.error Unable to rename %rfile to %filename
   }
   elseif (!$sbClient.remove(%rfile)) sbClient.error Unable to remove %rfile
   return
   :error
-  if (*unable to open file*SearchBot_results* iswm $error) {
+  if (*unable to open file*Search*_results* iswm $error) {
     echo 4 -sa [ERROR] Unable to open search results, possible file access restrictions.
     echo 4 -sa [ERROR] Try & manually open the file, if this fails (access denied) look at the security details for the file.
   }
 }
 on *:input:@sbClient.results*: {
-  if ($left($1-,1) == /) halt
+  if ($left($1-,1) == $comchar) halt
   var %sstring = $sbclient.FixString($1-)
   if ($sbClient.Check(%sbClient.SearchChannel,%sstring) == 0) halt
   sbClient.DoSearch %sbClient.SearchChannel %sstring
@@ -630,9 +685,13 @@ on *:start: {
   ; compatibility stuff...
   .disable #sbclient_nonoop
   .disable #sbclient_noqt
+  .disable #sbclient_nocomchar
   if ($version < 6.17) {
     if (!$isalias(noop)) .enable #sbclient_nonoop
     if (!$isalias(qt)) .enable #sbclient_noqt
+  }
+  if ($version < 7.46) {
+    if (!$isalias(comchar)) .enable #sbclient_nocomchar
   }
   ;
   sbClient.Cleanup
@@ -651,6 +710,9 @@ alias qt {
   return $+(%l,$1-,%r)
 }
 #sbclient_noqt end
+#sbclient_nocomchar off
+alias comchar return $readini($mircini,text,commandchar)
+#sbclient_nocomchar end
 
 on *:exit: sbClient.Cleanup
 alias sbClient.Cleanup {
@@ -664,7 +726,9 @@ alias sbClient.Cleanup {
   }
 }
 alias sbClient.update {
-  if (!$server) halt
+  return
+  ; the update code is broken
+  if (!$server) return
   sockopen sbClient dukelupus.com 80
 }
 on *:sockopen:sbClient: {
@@ -672,10 +736,7 @@ on *:sockopen:sbClient: {
   .sockwrite -n $sockname Host: dukelupus.com $+ $crlf $+ $crlf
 }
 on *:sockread:sbClient: {
-  if ($sockerr) {
-    .sockclose sbClient
-    halt
-  }
+  if ($sockerr) { .sockclose sbClient | return }
   else {
     var %t
     sockread %t
@@ -833,6 +894,13 @@ alias -l sbClient.loadbuf {
   reseterror
   return 0
 }
+alias -l sbClient.mkdir {
+  mkdir $qt($1-)
+  return 1
+  :error
+  reseterror
+  return 0
+}
 on *:KEYDOWN:@sbClient.*:*: {
   if ($keyrpt) return
 
@@ -857,8 +925,14 @@ on *:KEYDOWN:@sbClient.*:*: {
       else clipboard -n $iif(!%ctrlc,%l,$sbClient.GetFileName(%l))
       inc %cnter
     }
-    titlebar $active -|- $sline($active,0) line(s) copied to clipboard -|-
+    ;titlebar $active -|- $sline($active,0) line(s) copied to clipboard -|-
+    titlebar $active -|- $line($active,0) lines -|- rclick for options -|- $sline($active,0) line(s) copied to clipboard -|-
   }
+  elseif ($keyval == 17) {
+    ; ctrl-f doesnt trigger? 17 is ctrl by its self
+    ;if ($input(find,e) != $null) findtext $v1
+  }
+  ;echo -s key: $keyval
 }
 ;
 ;
