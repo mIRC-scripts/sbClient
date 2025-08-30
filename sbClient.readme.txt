@@ -1,7 +1,29 @@
-No lengthy readme. 
-If you need any help, go to http://www.dukelupus.com/sbclient - a sbClient homepage with all the help on it. 
+No lengthy readme. If you need any help, go to http://www.dukelupus.com - in there is a sbClient homepage with all the help on it. 
 
-As a last resort, send an e-mail to dukelupus@gmail.com - but beware, this is not my main account and I don't check it often. 
-Please also give your version of sbClient, mIRC and Windows.
+As a last resort, send me an e-mail to dukelupus@gmail.com - but beware, that is not my main account and I don't check it often. Please also give your version of sbClient, mIRC and Windows.
 
-Thx. DukeLupus
+DukeLupus
+
+Install:
+
+Unzip to mircdir/sbClient
+in mIRC type: /load -rs1 sbClient\sbClient.mrc
+
+Setup:
+
+Open sbClient Options from the channel or command menus
+goto the searchbot tab
+click on a channel that has a searchbot in it, then click "Add"
+click on "Request Triggers"
+press "Ok"
+
+Usage:
+
+Press F4 to open the search dialog.
+
+v2.24+
+Within the search results window there some keyboard shortcuts you can use:
+You can request a file by pressing `r` or `ctrl-r` to request the file & remove from the results list.
+  This will call the default autoget method set in options.
+You can search within the results by pressing `ctrl-z` & entering a wildcard search pattern. (NB: ctrl-f wont work in a @custom window)
+You can now send results to an internal queue to be downloaded.
